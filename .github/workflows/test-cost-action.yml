@@ -1,0 +1,46 @@
+name: Test Cloud Cost Action
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  cost:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Infracost secret
+        id: secret_check
+        env:
+          INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        run: |
+          if [ -n "$INFRACOST_API_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "INFRACOST_API_KEY is not set; skipping cost action test."
+          fi
+
+      - name: Run Cloud Cost Estimator
+        if: ${{ steps.secret_check.outputs.has_key == 'true' }}
+        id: cost
+        uses: manmohanmirkar123/cloud-cost-estimator-action@main
+        with:
+          iac-path: ./terraform
+          provider: aws
+          infracost-api-key: ${{ secrets.INFRACOST_API_KEY }}
+          comment-on-pr: 'true'
+          upload-report-artifact: 'true'
+          artifact-name: sample-consumer-cost-report
+
+      - name: Show Outputs
+        if: ${{ steps.secret_check.outputs.has_key == 'true' }}
+        run: |
+          echo "Monthly cost: ${{ steps.cost.outputs.total-monthly-cost }}"
+          echo "Text report path: ${{ steps.cost.outputs.report }}"
+          echo "JSON report path: ${{ steps.cost.outputs.report-json }}"
+          cat "${{ steps.cost.outputs.report }}"
